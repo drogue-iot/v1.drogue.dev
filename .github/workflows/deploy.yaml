@@ -1,0 +1,71 @@
+name: Deploy
+on:
+  workflow_dispatch: {}
+
+env:
+  DOMAIN: v1.device-simulator.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-20.04
+
+    steps:
+
+      - uses: actions/checkout@v3
+        with:
+          repository: drogue-iot/drogue-device-simulator
+          ref: "release/v1"
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          target: wasm32-unknown-unknown
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('**/Cargo.lock') }}
+
+      - uses: actions/cache@v2
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Add .local/bin to path
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install Trunk
+        run: |
+          curl -sSL https://github.com/thedodd/trunk/releases/download/v0.14.0/trunk-x86_64-unknown-linux-gnu.tar.gz -o trunk.tar.gz
+          tar xzvf trunk.tar.gz
+          install -m 0755 trunk  "$HOME/.local/bin"
+
+      - name: Build
+        run: |
+          npm install
+          trunk build --release
+
+      - name: Copy additional assets
+        run: |
+          cp 404.html ./dist
+          echo "$DOMAIN" > ./dist/CNAME
+
+      - name: Log content
+        run: |
+          find ./dist
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
